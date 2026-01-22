@@ -1,3 +1,5 @@
+source .venv/bin/activate
+
 for i in {1..10}; do
     python python_timeit_benchmark.py --num_layers 12 --num_heads 12 --d_model 768 --d_ff 3072
 done
