@@ -164,3 +164,4 @@ cython_debug/
 #.idea/
 
 *.sqlite
+memory_snapshots/*
