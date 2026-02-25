@@ -79,7 +79,9 @@ def main():
 
     for i in range(args.warmup_steps):
         input = torch.randint(0, args.vocab_size, (args.batch_size, args.context_length)).to('cuda')
-        _ = model(input)
+        with amp_context_mgr:
+            op = model(input)
+            op.mean().backward()
 
     input = torch.randint(0, args.vocab_size, (args.batch_size, args.context_length)).to('cuda')
 
