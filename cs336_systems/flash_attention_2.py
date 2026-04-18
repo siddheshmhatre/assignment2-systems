@@ -1,6 +1,22 @@
 import math
 import torch
 
+@torch.compile
+def _flash_backward(Q, K, V, O, grad_O, L):
+	output_dims = Q.shape[-1]
+	scale = 1 / math.sqrt(output_dims)
+
+	S = Q @ K.transpose(-1, -2) * scale # b, num_queries, num_keys
+	P = torch.exp(S - L.unsqueeze_(-1)) # b, num_queries, num_keys
+	dV = P.transpose(-1, -2) @ grad_O # b, keys, d
+	dP = grad_O @ V.transpose(-1, -2) # b, num_queries, num_keys
+	D = (O * grad_O).sum(dim=-1) # b, num_queries
+	dS = P * (dP - D.unsqueeze_(-1)) # b, num_queries, num_keys
+	dQ = dS @ K * scale # b, num_queries, d
+	dK = dS.transpose(-1, -2) @ Q * scale # b, num_keys, d
+
+	return dQ, dK, dV, None
+
 class FlashAttentionPytorch(torch.autograd.Function):
 	@staticmethod
 	def forward(ctx, Q, K, V, is_causal=False):
@@ -43,5 +59,6 @@ class FlashAttentionPytorch(torch.autograd.Function):
 
 
 	@staticmethod
-	def backward(ctx):
-		raise NotImplementedError()
+	def backward(ctx, grad_O):
+		Q, K, V, O, L = ctx.saved_tensors
+		return _flash_backward(Q, K, V, O, grad_O, L)

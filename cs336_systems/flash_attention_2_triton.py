@@ -106,6 +106,30 @@ def flash_attention_fwd(
 	tl.store(O_block_ptr, output, boundary_check=(0, 1))
 	tl.store(L_block_ptr, l, boundary_check=(0,))
 
+@torch.compile
+def _flash_backward(Q, K, V, O, grad_O, L, is_causal):
+	output_dims = Q.shape[-1]
+	num_queries = Q.shape[1]
+	num_keys = K.shape[1]
+	scale = 1 / math.sqrt(output_dims)
+
+	S = Q @ K.transpose(-1, -2) * scale # b, num_queries, num_keys
+
+	if is_causal:
+		Q_idxs = torch.arange(0, num_queries)
+		K_idxs = torch.arange(0, num_keys)
+		mask = (Q_idxs[:, None] < K_idxs[None, :]).to(Q.device)
+		S = torch.where(mask[None, :], S - 1e6, S)
+	P = torch.exp(S - L.unsqueeze_(-1)) # b, num_queries, num_keys
+	dV = P.transpose(-1, -2) @ grad_O # b, keys, d
+	dP = grad_O @ V.transpose(-1, -2) # b, num_queries, num_keys
+	D = (O * grad_O).sum(dim=-1) # b, num_queries
+	dS = P * (dP - D.unsqueeze_(-1)) # b, num_queries, num_keys
+	dQ = dS @ K * scale # b, num_queries, d
+	dK = dS.transpose(-1, -2) @ Q * scale # b, num_keys, d
+
+	return dQ, dK, dV, None
+
 class FlashAttentionTriton(torch.autograd.Function):
 	@staticmethod
 	def forward(ctx, Q, K, V, is_causal=False):
@@ -135,6 +159,11 @@ class FlashAttentionTriton(torch.autograd.Function):
 							ctx.is_causal
 					  )
 
-		ctx.save_for_backward(Q, K, V, L)
+		ctx.save_for_backward(Q, K, V, O, L)
 
 		return O
+
+	@staticmethod
+	def backward(ctx, grad_O):
+		Q, K, V, O, L = ctx.saved_tensors
+		return _flash_backward(Q, K, V, O, grad_O, L, ctx.is_causal)
