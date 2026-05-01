@@ -143,7 +143,7 @@ class FlashAttentionTriton(torch.autograd.Function):
 		ctx.is_causal = is_causal
 
 		O = torch.empty_like(Q)
-		L = torch.empty((batch_size, num_queries), device=Q.device, dtype=Q.dtype)
+		L = torch.empty((batch_size, num_queries), device=Q.device, dtype=torch.float32)
 
 		flash_attention_fwd[(cdiv(num_queries, ctx.Q_TILE_SIZE), batch_size)](Q, K, V, O, L, 
 							num_queries * output_dims, output_dims, 1,
