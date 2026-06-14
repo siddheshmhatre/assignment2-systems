@@ -44,6 +44,10 @@ def sdpa_fn(q, k, v, is_causal):
     return F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
 
 
+def fa2_triton_tribwd_fn(q, k, v, is_causal):
+    return FlashAttentionTriton.apply(q, k, v, is_causal, True)
+
+
 def make_inputs(seq_len, d_model):
     shape = (BATCH_SIZE, seq_len, d_model)
     q = torch.randn(shape, device=DEVICE, dtype=DTYPE, requires_grad=True)
@@ -63,6 +67,7 @@ def run_benchmarks():
             "pytorch_sdpa": sdpa_fn,
             "fa2_pytorch": FlashAttentionPytorch.apply,
             "fa2_triton": FlashAttentionTriton.apply,
+            "fa2_triton_tribwd": fa2_triton_tribwd_fn,
         }
 
         for name, fn in impls.items():
@@ -96,12 +101,14 @@ def rows_to_markdown(rows):
         "sdpa_fwd", "sdpa_bwd", "sdpa_e2e",
         "fa2_pt_fwd", "fa2_pt_bwd", "fa2_pt_e2e",
         "fa2_tri_fwd", "fa2_tri_bwd", "fa2_tri_e2e",
+        "fa2_tri_tribwd_fwd", "fa2_tri_tribwd_bwd", "fa2_tri_tribwd_e2e",
     ]
     col_keys = [
         "seq_len", "d_model",
         "pytorch_sdpa_fwd", "pytorch_sdpa_bwd", "pytorch_sdpa_e2e",
         "fa2_pytorch_fwd", "fa2_pytorch_bwd", "fa2_pytorch_e2e",
         "fa2_triton_fwd", "fa2_triton_bwd", "fa2_triton_e2e",
+        "fa2_triton_tribwd_fwd", "fa2_triton_tribwd_bwd", "fa2_triton_tribwd_e2e",
     ]
 
     lines = []
@@ -118,7 +125,7 @@ if __name__ == "__main__":
     rows = run_benchmarks()
     md = rows_to_markdown(rows)
 
-    out_path = "flash_benchmarking_results.md"
+    out_path = "benchmarks/flash_benchmarking_results.md"
     with open(out_path, "w") as f:
         f.write("# Flash Attention Benchmarking Results\n\n")
         f.write("All times in milliseconds. Batch size 1, causal masking, dtype=bfloat16.\n\n")
